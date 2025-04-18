@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -114,66 +112,89 @@ def show_dashboard(df_cumulative, df_stellar, df_merged):
 
         color_by = scatter_options[0] if scatter_options else 'koi_disposition'
 
-        # Create the scatter plot with HoloViews
-        scatter = filtered_data.hvplot.scatter(
-            'koi_period',
-            'koi_prad',
+        # Create the scatter plot with Plotly
+        fig = px.scatter(
+            filtered_data,
+            x='koi_period',
+            y='koi_prad',
             color=color_by,
-            hover_cols=['kepid', 'koi_disposition', 'koi_teq', 'koi_insol'],
-            height=500,
+            hover_data=['kepid', 'koi_disposition', 'koi_teq', 'koi_insol'],
+            title='Planet Radius vs. Orbital Period'
+        )
+
+        # Update layout
+        fig.update_layout(
+            xaxis_title="Orbital Period (days)",
+            yaxis_title="Planet Radius (Earth radii)",
             width=800,
-            title='Planet Radius vs. Orbital Period',
-            xlabel='Orbital Period (days)',
-            ylabel='Planet Radius (Earth radii)'
+            height=500
         )
 
         # Display the plot
-        st.bokeh_chart(hv.render(scatter))
+        st.plotly_chart(fig)
 
         # Create histograms of key features
         hist_col1, hist_col2 = st.columns(2)
 
         with hist_col1:
             # Create a histogram of planet radius
-            radius_hist = filtered_data.hvplot.hist(
-                'koi_prad',
-                bins=30,
-                height=300,
+            fig_radius = px.histogram(
+                filtered_data,
+                x='koi_prad',
+                nbins=30,
+                title='Distribution of Planet Radius'
+            )
+
+            # Update layout
+            fig_radius.update_layout(
+                xaxis_title="Planet Radius (Earth radii)",
+                yaxis_title="Count",
                 width=400,
-                title='Distribution of Planet Radius',
-                xlabel='Planet Radius (Earth radii)',
-                ylabel='Count'
+                height=300
             )
 
             # Display the plot
-            st.bokeh_chart(hv.render(radius_hist))
+            st.plotly_chart(fig_radius)
 
         with hist_col2:
             # Create a histogram of orbital period
-            period_hist = filtered_data.hvplot.hist(
-                'koi_period',
-                bins=30,
-                height=300,
+            fig_period = px.histogram(
+                filtered_data,
+                x='koi_period',
+                nbins=30,
+                title='Distribution of Orbital Period'
+            )
+
+            # Update layout
+            fig_period.update_layout(
+                xaxis_title="Orbital Period (days)",
+                yaxis_title="Count",
                 width=400,
-                title='Distribution of Orbital Period',
-                xlabel='Orbital Period (days)',
-                ylabel='Count'
+                height=300
             )
 
             # Display the plot
-            st.bokeh_chart(hv.render(period_hist))
+            st.plotly_chart(fig_period)
 
         # Create a pie chart of dispositions
         if 'koi_disposition' in filtered_data.columns:
             disposition_counts = filtered_data['koi_disposition'].value_counts()
 
-            # Create the pie chart
-            fig, ax = plt.subplots(figsize=(8, 8))
-            ax.pie(disposition_counts, labels=disposition_counts.index, autopct='%1.1f%%', startangle=90)
-            ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
+            # Create the pie chart with Plotly
+            fig_pie = px.pie(
+                values=disposition_counts.values,
+                names=disposition_counts.index,
+                title='Distribution of Dispositions'
+            )
+
+            # Update layout
+            fig_pie.update_layout(
+                width=500,
+                height=500
+            )
 
             # Display the chart
-            st.pyplot(fig)
+            st.plotly_chart(fig_pie)
 
     # Feature Relationships tab
     with tab2:
@@ -189,13 +210,22 @@ def show_dashboard(df_cumulative, df_stellar, df_merged):
         # Calculate the correlation matrix
         corr_matrix = filtered_data[corr_cols].corr()
 
-        # Create a heatmap
-        fig, ax = plt.subplots(figsize=(12, 10))
-        sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', ax=ax, fmt='.2f')
-        plt.title('Correlation Matrix of Numerical Features')
+        # Create a heatmap with Plotly
+        fig_heatmap = px.imshow(
+            corr_matrix,
+            text_auto='.2f',
+            color_continuous_scale='RdBu_r',
+            title='Correlation Matrix of Numerical Features'
+        )
+
+        # Update layout
+        fig_heatmap.update_layout(
+            width=800,
+            height=800
+        )
 
         # Display the heatmap
-        st.pyplot(fig)
+        st.plotly_chart(fig_heatmap)
 
         # Create a pairplot of selected features
         st.subheader("Feature Pairplot")
@@ -212,111 +242,142 @@ def show_dashboard(df_cumulative, df_stellar, df_merged):
             sample_size = min(1000, len(filtered_data))
             sampled_data = filtered_data.sample(sample_size)
 
-            # Create the pairplot
-            if 'koi_disposition' in sampled_data.columns:
-                pair_plot = sampled_data.hvplot.scatter(
-                    x=pairplot_features[0],
-                    y=pairplot_features[1],
-                    by='koi_disposition',
-                    height=400,
-                    width=600
-                )
-            else:
-                pair_plot = sampled_data.hvplot.scatter(
-                    x=pairplot_features[0],
-                    y=pairplot_features[1],
-                    height=400,
-                    width=600
-                )
+            # Create the scatter plot
+            fig_pair = px.scatter(
+                sampled_data,
+                x=pairplot_features[0],
+                y=pairplot_features[1],
+                color='koi_disposition' if 'koi_disposition' in sampled_data.columns else None,
+                title=f'{pairplot_features[1]} vs. {pairplot_features[0]}'
+            )
+
+            # Update layout
+            fig_pair.update_layout(
+                xaxis_title=pairplot_features[0],
+                yaxis_title=pairplot_features[1],
+                width=600,
+                height=400
+            )
 
             # Display the plot
-            st.bokeh_chart(hv.render(pair_plot))
+            st.plotly_chart(fig_pair)
 
             # Create a 3D scatter plot if three features are selected
             if len(pairplot_features) >= 3:
                 st.subheader("3D Scatter Plot")
 
                 # Create the 3D scatter plot
-                scatter_3d = sampled_data.hvplot.scatter_3d(
+                fig_3d = px.scatter_3d(
+                    sampled_data,
                     x=pairplot_features[0],
                     y=pairplot_features[1],
                     z=pairplot_features[2],
                     color='koi_disposition' if 'koi_disposition' in sampled_data.columns else None,
-                    height=500,
-                    width=700
+                    title=f'3D Scatter Plot of {pairplot_features[0]}, {pairplot_features[1]}, and {pairplot_features[2]}'
+                )
+
+                # Update layout
+                fig_3d.update_layout(
+                    scene=dict(
+                        xaxis_title=pairplot_features[0],
+                        yaxis_title=pairplot_features[1],
+                        zaxis_title=pairplot_features[2]
+                    ),
+                    width=700,
+                    height=500
                 )
 
                 # Display the plot
-                st.bokeh_chart(hv.render(scatter_3d))
+                st.plotly_chart(fig_3d)
 
     # Stellar Properties tab
     with tab3:
         st.subheader("Stellar Properties Analysis")
 
         # Create a scatter plot of stellar effective temperature vs. stellar radius
-        stellar_scatter = filtered_data.hvplot.scatter(
-            'teff',
-            'radius',
+        fig_stellar = px.scatter(
+            filtered_data,
+            x='teff',
+            y='radius',
             color='koi_disposition' if 'koi_disposition' in filtered_data.columns else None,
-            hover_cols=['kepid', 'koi_disposition', 'mass', 'logg', 'feh'],
-            height=500,
+            hover_data=['kepid', 'koi_disposition', 'mass', 'logg', 'feh'],
+            title='Stellar Radius vs. Effective Temperature (HR Diagram)'
+        )
+
+        # Update layout
+        fig_stellar.update_layout(
+            xaxis_title="Effective Temperature (K)",
+            yaxis_title="Stellar Radius (Solar radii)",
             width=800,
-            title='Stellar Radius vs. Effective Temperature (HR Diagram)',
-            xlabel='Effective Temperature (K)',
-            ylabel='Stellar Radius (Solar radii)'
+            height=500
         )
 
         # Display the plot
-        st.bokeh_chart(hv.render(stellar_scatter))
+        st.plotly_chart(fig_stellar)
 
         # Create histograms of stellar properties
         stellar_hist_col1, stellar_hist_col2 = st.columns(2)
 
         with stellar_hist_col1:
             # Create a histogram of stellar effective temperature
-            teff_hist = filtered_data.hvplot.hist(
-                'teff',
-                bins=30,
-                height=300,
+            fig_teff = px.histogram(
+                filtered_data,
+                x='teff',
+                nbins=30,
+                title='Distribution of Stellar Effective Temperature'
+            )
+
+            # Update layout
+            fig_teff.update_layout(
+                xaxis_title="Effective Temperature (K)",
+                yaxis_title="Count",
                 width=400,
-                title='Distribution of Stellar Effective Temperature',
-                xlabel='Effective Temperature (K)',
-                ylabel='Count'
+                height=300
             )
 
             # Display the plot
-            st.bokeh_chart(hv.render(teff_hist))
+            st.plotly_chart(fig_teff)
 
         with stellar_hist_col2:
             # Create a histogram of stellar radius
-            radius_hist = filtered_data.hvplot.hist(
-                'radius',
-                bins=30,
-                height=300,
+            fig_radius = px.histogram(
+                filtered_data,
+                x='radius',
+                nbins=30,
+                title='Distribution of Stellar Radius'
+            )
+
+            # Update layout
+            fig_radius.update_layout(
+                xaxis_title="Stellar Radius (Solar radii)",
+                yaxis_title="Count",
                 width=400,
-                title='Distribution of Stellar Radius',
-                xlabel='Stellar Radius (Solar radii)',
-                ylabel='Count'
+                height=300
             )
 
             # Display the plot
-            st.bokeh_chart(hv.render(radius_hist))
+            st.plotly_chart(fig_radius)
 
         # Create a scatter plot of stellar mass vs. stellar radius
-        mass_radius_scatter = filtered_data.hvplot.scatter(
-            'mass',
-            'radius',
+        fig_mass_radius = px.scatter(
+            filtered_data,
+            x='mass',
+            y='radius',
             color='koi_disposition' if 'koi_disposition' in filtered_data.columns else None,
-            hover_cols=['kepid', 'koi_disposition', 'teff', 'logg', 'feh'],
-            height=500,
+            hover_data=['kepid', 'koi_disposition', 'teff', 'logg', 'feh'],
+            title='Stellar Radius vs. Stellar Mass'
+        )
+
+        # Update layout
+        fig_mass_radius.update_layout(
+            xaxis_title="Stellar Mass (Solar masses)",
+            yaxis_title="Stellar Radius (Solar radii)",
             width=800,
-            title='Stellar Radius vs. Stellar Mass',
-            xlabel='Stellar Mass (Solar masses)',
-            ylabel='Stellar Radius (Solar radii)'
+            height=500
         )
 
         # Display the plot
-        st.bokeh_chart(hv.render(mass_radius_scatter))
+        st.plotly_chart(fig_mass_radius)
 
     # Data Explorer tab
     with tab4:
@@ -345,33 +406,43 @@ def show_dashboard(df_cumulative, df_stellar, df_merged):
 
         if feature_to_explore:
             # Create a histogram of the selected feature
-            feature_hist = filtered_data.hvplot.hist(
-                feature_to_explore,
-                bins=30,
-                height=400,
+            fig_feature = px.histogram(
+                filtered_data,
+                x=feature_to_explore,
+                nbins=30,
+                title=f'Distribution of {feature_to_explore}'
+            )
+
+            # Update layout
+            fig_feature.update_layout(
+                xaxis_title=feature_to_explore,
+                yaxis_title="Count",
                 width=800,
-                title=f'Distribution of {feature_to_explore}',
-                xlabel=feature_to_explore,
-                ylabel='Count'
+                height=400
             )
 
             # Display the plot
-            st.bokeh_chart(hv.render(feature_hist))
+            st.plotly_chart(fig_feature)
 
             # Create a box plot of the selected feature by disposition
             if 'koi_disposition' in filtered_data.columns:
-                feature_box = filtered_data.hvplot.box(
+                fig_box = px.box(
+                    filtered_data,
                     y=feature_to_explore,
-                    by='koi_disposition',
-                    height=400,
+                    x='koi_disposition',
+                    title=f'Box Plot of {feature_to_explore} by Disposition'
+                )
+
+                # Update layout
+                fig_box.update_layout(
+                    xaxis_title="Disposition",
+                    yaxis_title=feature_to_explore,
                     width=800,
-                    title=f'Box Plot of {feature_to_explore} by Disposition',
-                    xlabel='Disposition',
-                    ylabel=feature_to_explore
+                    height=400
                 )
 
                 # Display the plot
-                st.bokeh_chart(hv.render(feature_box))
+                st.plotly_chart(fig_box)
 
         # Create a custom scatter plot
         st.subheader("Custom Scatter Plot")
@@ -401,17 +472,22 @@ def show_dashboard(df_cumulative, df_stellar, df_merged):
             )
 
         # Create the custom scatter plot
-        custom_scatter = filtered_data.hvplot.scatter(
-            x_feature,
-            y_feature,
+        fig_custom = px.scatter(
+            filtered_data,
+            x=x_feature,
+            y=y_feature,
             color=color_feature if color_feature in filtered_data.columns else None,
-            hover_cols=['kepid', 'koi_disposition'],
-            height=500,
+            hover_data=['kepid', 'koi_disposition'],
+            title=f'{y_feature} vs. {x_feature}'
+        )
+
+        # Update layout
+        fig_custom.update_layout(
+            xaxis_title=x_feature,
+            yaxis_title=y_feature,
             width=800,
-            title=f'{y_feature} vs. {x_feature}',
-            xlabel=x_feature,
-            ylabel=y_feature
+            height=500
         )
 
         # Display the plot
-        st.bokeh_chart(hv.render(custom_scatter))
+        st.plotly_chart(fig_custom)

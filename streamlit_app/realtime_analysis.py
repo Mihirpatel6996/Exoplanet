@@ -111,29 +111,54 @@ def show_realtime_analysis(df_cumulative, df_stellar, df_merged, rf_model, xgb_m
 
         # Make predictions
         rf_pred_proba = rf_model.predict_proba(prediction_data_scaled)
-        xgb_pred_proba = xgb_model.predict_proba(prediction_data_scaled)
 
-        # Print shapes for debugging
-        print(f"RF shape: {rf_pred_proba.shape}, XGB shape: {xgb_pred_proba.shape}")
+        # Handle the case where rf_pred_proba is a list of arrays
+        if isinstance(rf_pred_proba, list):
+            # For each sample, we need to determine the class with highest probability
+            predicted_classes = []
+            candidate_probs = []
+            confirmed_probs = []
+            false_positive_probs = []
 
-        # Check if shapes match
-        if rf_pred_proba.shape == xgb_pred_proba.shape:
-            # Average the predictions
-            avg_pred_proba = (rf_pred_proba + xgb_pred_proba) / 2
+            # Get the number of samples
+            num_samples = len(rf_pred_proba[0])
+
+            # For each sample
+            for i in range(num_samples):
+                # Get probabilities for each class for this sample
+                candidate_prob = rf_pred_proba[0][i][0]
+                confirmed_prob = rf_pred_proba[1][i][0]
+                false_positive_prob = rf_pred_proba[2][i][0]
+
+                # Store probabilities
+                candidate_probs.append(candidate_prob)
+                confirmed_probs.append(confirmed_prob)
+                false_positive_probs.append(false_positive_prob)
+
+                # Find the class with highest probability
+                probs = [candidate_prob, confirmed_prob, false_positive_prob]
+                class_idx = np.argmax(probs)
+                class_names = ['CANDIDATE', 'CONFIRMED', 'FALSE POSITIVE']
+                predicted_classes.append(class_names[class_idx])
         else:
-            # Use only Random Forest predictions
-            avg_pred_proba = rf_pred_proba
-
-        # Get the class with the highest probability
-        class_names = ['CANDIDATE', 'CONFIRMED', 'FALSE POSITIVE']
-        predicted_class_idx = np.argmax(avg_pred_proba, axis=1)
-        predicted_class = [class_names[i] for i in predicted_class_idx]
+            # Handle the case where rf_pred_proba is a numpy array
+            class_names = ['CANDIDATE', 'CONFIRMED', 'FALSE POSITIVE']
+            if hasattr(rf_pred_proba, 'shape') and len(rf_pred_proba.shape) > 1:
+                predicted_classes = [class_names[i] for i in np.argmax(rf_pred_proba, axis=1)]
+                candidate_probs = rf_pred_proba[:, 0]
+                confirmed_probs = rf_pred_proba[:, 1]
+                false_positive_probs = rf_pred_proba[:, 2] if rf_pred_proba.shape[1] > 2 else np.zeros(len(rf_pred_proba))
+            else:
+                predicted_classes = [class_names[np.argmax(rf_pred_proba)]]
+                candidate_probs = [rf_pred_proba[0]]
+                confirmed_probs = [rf_pred_proba[1]]
+                false_positive_probs = [rf_pred_proba[2]] if len(rf_pred_proba) > 2 else [0]
 
         # Add the predictions to the data
-        new_data['predicted_class'] = predicted_class
-        new_data['candidate_prob'] = avg_pred_proba[:, 0]
-        new_data['confirmed_prob'] = avg_pred_proba[:, 1]
-        new_data['false_positive_prob'] = avg_pred_proba[:, 2]
+        new_data['predicted_class'] = predicted_classes
+        new_data['candidate_prob'] = candidate_probs
+        new_data['confirmed_prob'] = confirmed_probs
+        new_data['false_positive_prob'] = false_positive_probs
 
         return new_data
 
@@ -200,13 +225,16 @@ def show_realtime_analysis(df_cumulative, df_stellar, df_merged, rf_model, xgb_m
                 # Sort by timestamp in descending order
                 recent_data = st.session_state.realtime_data.sort_values('timestamp', ascending=False).head(10)
 
+                # Convert probabilities to percentages for display
+                display_df = recent_data[['kepid', 'koi_period', 'koi_prad', 'koi_teq', 'predicted_class',
+                                         'candidate_prob', 'confirmed_prob', 'false_positive_prob', 'timestamp']].copy()
+
+                # Format probabilities as percentages
+                for prob_col in ['candidate_prob', 'confirmed_prob', 'false_positive_prob']:
+                    display_df[prob_col] = display_df[prob_col].apply(lambda x: f"{float(x) * 100:.2f}%" if isinstance(x, (int, float)) else x)
+
                 # Display the data
-                st.dataframe(recent_data[['kepid', 'koi_period', 'koi_prad', 'koi_teq', 'predicted_class',
-                                         'candidate_prob', 'confirmed_prob', 'false_positive_prob', 'timestamp']].style.format({
-                    'candidate_prob': '{:.2%}',
-                    'confirmed_prob': '{:.2%}',
-                    'false_positive_prob': '{:.2%}'
-                }))
+                st.dataframe(display_df)
 
             # Create a real-time visualization
             st.subheader("Real-time Visualization")
@@ -252,25 +280,25 @@ def show_realtime_analysis(df_cumulative, df_stellar, df_merged, rf_model, xgb_m
                 if class_name not in grouped_data.columns:
                     grouped_data[class_name] = 0
 
-            # Create a line chart
-            fig, ax = plt.subplots(figsize=(10, 6))
+            # Create a line chart with Plotly
+            fig = px.line(
+                grouped_data,
+                x='minute',
+                y=['CONFIRMED', 'CANDIDATE', 'FALSE POSITIVE'],
+                color_discrete_map={'CONFIRMED': 'green', 'CANDIDATE': 'blue', 'FALSE POSITIVE': 'red'},
+                title='Trend of Predictions Over Time'
+            )
 
-            # Plot the data
-            ax.plot(grouped_data['minute'], grouped_data['CONFIRMED'], 'g-', label='CONFIRMED')
-            ax.plot(grouped_data['minute'], grouped_data['CANDIDATE'], 'b-', label='CANDIDATE')
-            ax.plot(grouped_data['minute'], grouped_data['FALSE POSITIVE'], 'r-', label='FALSE POSITIVE')
-
-            # Add labels and title
-            ax.set_xlabel('Time')
-            ax.set_ylabel('Count')
-            ax.set_title('Trend of Predictions Over Time')
-            ax.legend()
-
-            # Format the x-axis
-            plt.xticks(rotation=45)
+            # Update layout
+            fig.update_layout(
+                xaxis_title="Time",
+                yaxis_title="Count",
+                width=800,
+                height=400
+            )
 
             # Display the chart
-            st.pyplot(fig)
+            st.plotly_chart(fig)
 
             # Create a stacked area chart with Plotly
             df_stacked = grouped_data.melt(id_vars=['minute'], value_vars=['CONFIRMED', 'CANDIDATE', 'FALSE POSITIVE'],
@@ -315,12 +343,29 @@ def show_realtime_analysis(df_cumulative, df_stellar, df_merged, rf_model, xgb_m
                 # Create a correlation heatmap
                 corr_cols = ['koi_period', 'koi_prad', 'koi_teq', 'koi_insol',
                             'candidate_prob', 'confirmed_prob', 'false_positive_prob']
+
+                # Filter out columns that don't exist
+                corr_cols = [col for col in corr_cols if col in st.session_state.realtime_data.columns]
+
+                # Calculate correlation matrix
                 corr_matrix = st.session_state.realtime_data[corr_cols].corr()
 
-                # Create a heatmap
-                fig, ax = plt.subplots(figsize=(10, 8))
-                sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', ax=ax)
-                st.pyplot(fig)
+                # Create a heatmap with Plotly
+                fig = px.imshow(
+                    corr_matrix,
+                    text_auto='.2f',
+                    color_continuous_scale='RdBu_r',
+                    title='Correlation Matrix of Numerical Features'
+                )
+
+                # Update layout
+                fig.update_layout(
+                    width=600,
+                    height=500
+                )
+
+                # Display the heatmap
+                st.plotly_chart(fig)
         else:
             st.info("Not enough data for trend analysis. Wait for more data points to be generated.")
 
@@ -364,12 +409,16 @@ def show_realtime_analysis(df_cumulative, df_stellar, df_merged, rf_model, xgb_m
             # Display the anomalies
             if not anomalies.empty:
                 st.subheader("Detected Anomalies")
-                st.dataframe(anomalies[['kepid', 'koi_period', 'koi_prad', 'koi_teq', 'predicted_class',
-                                       'candidate_prob', 'confirmed_prob', 'false_positive_prob', 'timestamp']].style.format({
-                    'candidate_prob': '{:.2%}',
-                    'confirmed_prob': '{:.2%}',
-                    'false_positive_prob': '{:.2%}'
-                }))
+                # Convert probabilities to percentages for display
+                display_df = anomalies[['kepid', 'koi_period', 'koi_prad', 'koi_teq', 'predicted_class',
+                                       'candidate_prob', 'confirmed_prob', 'false_positive_prob', 'timestamp']].copy()
+
+                # Format probabilities as percentages
+                for prob_col in ['candidate_prob', 'confirmed_prob', 'false_positive_prob']:
+                    display_df[prob_col] = display_df[prob_col].apply(lambda x: f"{float(x) * 100:.2f}%" if isinstance(x, (int, float)) else x)
+
+                # Display the data
+                st.dataframe(display_df)
 
                 # Create a scatter plot of anomalies
                 fig = px.scatter(

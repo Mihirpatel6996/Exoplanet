@@ -1,10 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import plotly.express as px
-import plotly.graph_objects as go
 
 def show_prediction_page(rf_model, xgb_model, scaler, feature_names):
     """
@@ -103,17 +100,22 @@ def show_prediction_page(rf_model, xgb_model, scaler, feature_names):
 
             # Make predictions
             rf_pred_proba = rf_model.predict_proba(input_data_scaled)
-            xgb_pred_proba = xgb_model.predict_proba(input_data_scaled)
 
-            # Print shapes for debugging
-            st.write(f"RF shape: {rf_pred_proba.shape}, XGB shape: {xgb_pred_proba.shape}")
+            # Print raw predictions for debugging
+            st.write(f"RF: {rf_pred_proba}")
 
-            # Ensure we're working with the first row of predictions
-            rf_probs = rf_pred_proba[0]
-            xgb_probs = xgb_pred_proba[0]
+            # Use only Random Forest predictions for simplicity
+            if isinstance(rf_pred_proba, list):
+                rf_pred_proba = np.array(rf_pred_proba)
 
-            # Average the predictions
-            avg_pred_proba = (rf_probs + xgb_probs) / 2
+            # Get the probabilities for the first (and only) sample
+            if hasattr(rf_pred_proba, 'shape') and len(rf_pred_proba.shape) > 1:
+                probs = rf_pred_proba[0]
+            else:
+                probs = rf_pred_proba
+
+            # Use these probabilities
+            avg_pred_proba = probs
 
             # Get the class with the highest probability
             class_names = ['CANDIDATE', 'CONFIRMED', 'FALSE POSITIVE']
@@ -133,47 +135,64 @@ def show_prediction_page(rf_model, xgb_model, scaler, feature_names):
                 st.markdown("### Prediction Probabilities")
 
                 # Create a dataframe with the probabilities
-                proba_df = pd.DataFrame({
-                    'Class': class_names,
-                    'Random Forest': rf_probs,
-                    'XGBoost': xgb_probs,
-                    'Average': avg_pred_proba
-                })
+                proba_data = []
+                for i, class_name in enumerate(class_names):
+                    if i < len(avg_pred_proba):
+                        proba_data.append({'Class': class_name, 'Probability': avg_pred_proba[i]})
+                    else:
+                        proba_data.append({'Class': class_name, 'Probability': 0.0})
+                proba_df = pd.DataFrame(proba_data)
+
+                # Convert probabilities to percentages for display
+                for i in range(len(proba_df)):
+                    try:
+                        prob_value = proba_df.loc[i, 'Probability']
+                        if isinstance(prob_value, (int, float)):
+                            proba_df.loc[i, 'Probability'] = f"{prob_value * 100:.2f}%"
+                        elif hasattr(prob_value, 'shape'):
+                            # Handle numpy arrays
+                            if prob_value.shape == ():
+                                # Scalar array
+                                proba_df.loc[i, 'Probability'] = f"{float(prob_value) * 100:.2f}%"
+                            else:
+                                # Multi-dimensional array - take the first element
+                                proba_df.loc[i, 'Probability'] = f"{float(prob_value.flat[0]) * 100:.2f}%"
+                        else:
+                            # Try to convert to float
+                            proba_df.loc[i, 'Probability'] = f"{float(prob_value) * 100:.2f}%"
+                    except Exception as e:
+                        st.write(f"Error converting probability for class {proba_df.loc[i, 'Class']}: {e}")
+                        st.write(f"Value type: {type(prob_value)}, Value: {prob_value}")
+                        proba_df.loc[i, 'Probability'] = "0.00%"
 
                 # Display the probabilities
-                st.dataframe(proba_df.style.format({
-                    'Random Forest': '{:.2%}',
-                    'XGBoost': '{:.2%}',
-                    'Average': '{:.2%}'
-                }))
+                st.dataframe(proba_df)
 
             with result_col2:
-                # Create a bar chart of the probabilities
-                fig, ax = plt.subplots(figsize=(8, 6))
+                # Create a copy of the dataframe for plotting
+                plot_df = proba_df.copy()
 
-                # Set the width of the bars
-                bar_width = 0.25
+                # Convert percentage strings back to floats for plotting
+                plot_df['Probability'] = plot_df['Probability'].apply(lambda x: float(x.strip('%')) / 100 if isinstance(x, str) else x)
 
-                # Set the positions of the bars on the x-axis
-                r1 = np.arange(len(class_names))
-                r2 = [x + bar_width for x in r1]
-                r3 = [x + bar_width for x in r2]
+                # Create a bar chart of the probabilities using Plotly
+                fig = px.bar(
+                    plot_df,
+                    x='Class',
+                    y='Probability',
+                    title='Prediction Probabilities'
+                )
 
-                # Create the bars
-                ax.bar(r1, rf_probs, width=bar_width, label='Random Forest')
-                ax.bar(r2, xgb_probs, width=bar_width, label='XGBoost')
-                ax.bar(r3, avg_pred_proba, width=bar_width, label='Average')
-
-                # Add labels and title
-                ax.set_xlabel('Class')
-                ax.set_ylabel('Probability')
-                ax.set_title('Prediction Probabilities by Model')
-                ax.set_xticks([r + bar_width for r in range(len(class_names))])
-                ax.set_xticklabels(class_names)
-                ax.legend()
+                # Update layout
+                fig.update_layout(
+                    xaxis_title='Class',
+                    yaxis_title='Probability',
+                    width=600,
+                    height=400
+                )
 
                 # Display the chart
-                st.pyplot(fig)
+                st.plotly_chart(fig)
 
             # Display interpretation
             st.subheader("Prediction Interpretation")
@@ -261,40 +280,80 @@ def show_prediction_page(rf_model, xgb_model, scaler, feature_names):
 
                         # Make predictions
                         rf_pred_proba = rf_model.predict_proba(prediction_data_scaled)
-                        xgb_pred_proba = xgb_model.predict_proba(prediction_data_scaled)
 
-                        # Print shapes for debugging
-                        st.write(f"Batch RF shape: {rf_pred_proba.shape}, Batch XGB shape: {xgb_pred_proba.shape}")
+                        # Print raw predictions for debugging
+                        st.write(f"Batch RF: {rf_pred_proba}")
 
-                        # Check if shapes match
-                        if rf_pred_proba.shape == xgb_pred_proba.shape:
-                            # Average the predictions
-                            avg_pred_proba = (rf_pred_proba + xgb_pred_proba) / 2
+                        # Handle the case where rf_pred_proba is a list of arrays
+                        if isinstance(rf_pred_proba, list):
+                            # For each sample, we need to determine the class with highest probability
+                            predicted_classes = []
+                            candidate_probs = []
+                            confirmed_probs = []
+                            false_positive_probs = []
 
-                            # Get the class with the highest probability
-                            class_names = ['CANDIDATE', 'CONFIRMED', 'FALSE POSITIVE']
-                            predicted_classes = [class_names[i] for i in np.argmax(avg_pred_proba, axis=1)]
+                            # Get the number of samples
+                            num_samples = len(rf_pred_proba[0])
+
+                            # For each sample
+                            for i in range(num_samples):
+                                # Get probabilities for each class for this sample
+                                candidate_prob = rf_pred_proba[0][i][0]
+                                confirmed_prob = rf_pred_proba[1][i][0]
+                                false_positive_prob = rf_pred_proba[2][i][0]
+
+                                # Store probabilities
+                                candidate_probs.append(candidate_prob)
+                                confirmed_probs.append(confirmed_prob)
+                                false_positive_probs.append(false_positive_prob)
+
+                                # Find the class with highest probability
+                                probs = [candidate_prob, confirmed_prob, false_positive_prob]
+                                class_idx = np.argmax(probs)
+                                class_names = ['CANDIDATE', 'CONFIRMED', 'FALSE POSITIVE']
+                                predicted_classes.append(class_names[class_idx])
                         else:
-                            st.error("Model prediction shapes don't match. Using only Random Forest predictions.")
-                            avg_pred_proba = rf_pred_proba
+                            # Handle the case where rf_pred_proba is a numpy array
                             class_names = ['CANDIDATE', 'CONFIRMED', 'FALSE POSITIVE']
-                            predicted_classes = [class_names[i] for i in np.argmax(rf_pred_proba, axis=1)]
+                            if hasattr(rf_pred_proba, 'shape') and len(rf_pred_proba.shape) > 1:
+                                predicted_classes = [class_names[i] for i in np.argmax(rf_pred_proba, axis=1)]
+                                candidate_probs = rf_pred_proba[:, 0]
+                                confirmed_probs = rf_pred_proba[:, 1]
+                                false_positive_probs = rf_pred_proba[:, 2] if rf_pred_proba.shape[1] > 2 else np.zeros(len(rf_pred_proba))
+                            else:
+                                predicted_classes = [class_names[np.argmax(rf_pred_proba)]]
+                                candidate_probs = [rf_pred_proba[0]]
+                                confirmed_probs = [rf_pred_proba[1]]
+                                false_positive_probs = [rf_pred_proba[2]] if len(rf_pred_proba) > 2 else [0]
 
                         # Add the predictions to the original data
                         results_df = processed_data.copy()
                         results_df['predicted_class'] = predicted_classes
-                        results_df['candidate_prob'] = avg_pred_proba[:, 0]
-                        results_df['confirmed_prob'] = avg_pred_proba[:, 1]
-                        results_df['false_positive_prob'] = avg_pred_proba[:, 2]
+
+                        # Add probabilities
+                        try:
+                            # Add the probabilities we calculated earlier
+                            results_df['candidate_prob'] = candidate_probs
+                            results_df['confirmed_prob'] = confirmed_probs
+                            results_df['false_positive_prob'] = false_positive_probs
+                        except Exception as e:
+                            st.error(f"Error adding probabilities: {e}. Using default values.")
+                            results_df['candidate_prob'] = 0.0
+                            results_df['confirmed_prob'] = 0.0
+                            results_df['false_positive_prob'] = 0.0
 
                         # Display the results
                         st.subheader("Prediction Results")
-                        st.dataframe(results_df[['kepid', 'predicted_class', 'candidate_prob',
-                                                'confirmed_prob', 'false_positive_prob']].style.format({
-                            'candidate_prob': '{:.2%}',
-                            'confirmed_prob': '{:.2%}',
-                            'false_positive_prob': '{:.2%}'
-                        }))
+
+                        # Convert probabilities to percentages for display
+                        display_df = results_df[['kepid', 'predicted_class', 'candidate_prob', 'confirmed_prob', 'false_positive_prob']].copy()
+
+                        # Format probabilities as percentages
+                        for prob_col in ['candidate_prob', 'confirmed_prob', 'false_positive_prob']:
+                            display_df[prob_col] = display_df[prob_col].apply(lambda x: f"{float(x) * 100:.2f}%" if isinstance(x, (int, float)) else x)
+
+                        # Display the data
+                        st.dataframe(display_df)
 
                         # Create a summary of the predictions
                         prediction_counts = pd.Series(predicted_classes).value_counts()
@@ -312,11 +371,21 @@ def show_prediction_page(rf_model, xgb_model, scaler, feature_names):
                                 st.metric(f"{class_name}", f"{count} ({percentage:.1f}%)")
 
                         with summary_col2:
-                            # Create a pie chart
-                            fig, ax = plt.subplots(figsize=(8, 8))
-                            ax.pie(prediction_counts, labels=prediction_counts.index, autopct='%1.1f%%', startangle=90)
-                            ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
-                            st.pyplot(fig)
+                            # Create a pie chart with Plotly
+                            fig = px.pie(
+                                values=prediction_counts.values,
+                                names=prediction_counts.index,
+                                title='Distribution of Predictions'
+                            )
+
+                            # Update layout
+                            fig.update_layout(
+                                width=500,
+                                height=500
+                            )
+
+                            # Display the chart
+                            st.plotly_chart(fig)
 
                         # Option to download the results
                         csv = results_df.to_csv(index=False)

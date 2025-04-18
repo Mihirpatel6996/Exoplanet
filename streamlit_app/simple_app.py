@@ -4,8 +4,11 @@ import numpy as np
 import joblib
 import os
 import sys
-import matplotlib.pyplot as plt
 import plotly.express as px
+
+# Import custom modules
+from realtime_analysis import show_realtime_analysis
+from interactive_dashboard import show_dashboard
 
 # Add parent directory to path to import from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -56,13 +59,22 @@ with st.spinner("Loading data..."):
 with st.spinner("Loading models..."):
     rf_model, xgb_model, scaler, feature_names = load_models()
 
-# Model Prediction Page
-st.header("🔮 Model Deployment and Prediction System")
+# Create a navigation menu
+page = st.sidebar.radio(
+    "Navigation",
+    ["Model Prediction", "Real-time Analysis", "Interactive Dashboard"],
+    index=0
+)
 
-if rf_model is None or xgb_model is None or scaler is None or feature_names is None:
-    st.error("Models not loaded. Please run train_save_models.py first.")
-else:
-    st.markdown("""
+# Display the selected page
+if page == "Model Prediction":
+    # Model Prediction Page
+    st.header("🔮 Model Deployment and Prediction System")
+
+    if rf_model is None or xgb_model is None or scaler is None or feature_names is None:
+        st.error("Models not loaded. Please run train_save_models.py first.")
+    else:
+        st.markdown("""
     This page allows you to input data for a potential exoplanet candidate and get predictions from our trained models.
     """)
 
@@ -475,3 +487,11 @@ else:
 
             except Exception as e:
                 st.error(f"Error processing file: {e}")
+
+elif page == "Real-time Analysis":
+    # Real-time Analysis Page
+    show_realtime_analysis(df_cumulative, df_stellar, df_merged, rf_model, xgb_model, scaler, feature_names)
+
+elif page == "Interactive Dashboard":
+    # Interactive Dashboard Page
+    show_dashboard(df_cumulative, df_stellar, df_merged)
