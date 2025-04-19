@@ -42,6 +42,10 @@ venv.bak/
 
 # Data files
 *.csv
+!cumulative_2024.10.04_10.09.03.csv
+!kepler_stellar_data.csv
+!exoplanet_data.csv
+!diverse_exoplanets.csv
 *.dat
 *.pkl
 *.h5
@@ -110,3 +114,4 @@ _build/
 *.flv
 *.mov
 *.wmv
+
